@@ -70,9 +70,9 @@ freeze_time = FPS*5 #how long ene freeze when hit by ice bullet
 time_between_enemies1 = 100
 time_between_enemies2 = 400
 time_between_enemies3 = 1000
-time_between_enemies4 = 5000
-time_between_enemies5 = 1700
-arc_bullet_step = 100
+time_between_enemies4 = 100
+time_between_enemies5 = 100
+arc_bullet_step = 10
 arc_bullet_start = 90
 arc_bullet_end = 270 + arc_bullet_step
 
@@ -183,6 +183,7 @@ class Enemy:
         self.lvl = lvl
         self.isexploding = False
         self.is_frozen = False
+        self.lighting = False
         self.freeze_clock = 0
 
         # Level specific
@@ -264,14 +265,11 @@ class Enemy:
             self.direction = random.choice([True, False])
             self.y = y-50
 
-        if self.is_frozen == True:
-            self.spd = 0.6
-
         # Post Global Attributes
         self.mask = pygame.mask.from_surface(self.img)
         self.max_health = self.health
 
-        if self.lvl == 5 or self.lvl == 4:
+        if self.health>5:
             self.hp_bar = pygame.Rect(self.x, self.y - 8, self.img.get_width(), 6)
 
     # Methods
@@ -308,8 +306,9 @@ class Enemy:
     def poop(self):
         poop_chance = random.randint(0, FPS*5)
         if poop_chance == 0:
-            poop = Drop(self.x + self.img.get_width()/2 - poop_img.get_width()/2, self.y, "poop")
+            poop = Drop(self.x + self.img.get_width()/4, self.y, "poop")
             drops_list.append(poop)
+
 class Bullet:
     def __init__(self, x, y, mode=None):
         self.x = x
@@ -543,11 +542,23 @@ def handle_bullets(clip, ene_dict, player, ene_clip, aimed_ene_clip):
         # Enemy-Bullet Collision
         for enemy in ene_full_list:
             if bullet.collision(enemy) and enemy.health > 0:
-                enemy.health -= 5
-                if bullet.mode != "electric":
+
+                # Lightning Clause
+                if bullet.mode == 'electric':
+                    if enemy.lighting is False:
+                        enemy.health -= 5
+                        enemy.lighting = True
+
+                # Normal Bullet interaction
+                else:
+                    enemy.health -= 5
                     bullet.kill()
+
                 if bullet.mode == "ice":
                     enemy.is_frozen = True
+            elif enemy.health>0:
+                enemy.lighting=False
+
 
     if len(arc_bullet_clip) != 0:
         #squash_arc_b = subroutine.list_squasher(arc_bullet_clip)
@@ -626,21 +637,22 @@ def handle_enemies(ene_dict, player):
     ene = subroutine.ene_dict_to_ene_list(ene_dict)
 
     for enemy in ene:
-        # Handle Freezing
-        if enemy.is_frozen == True:
-            enemy.freeze_clock += 1
-            enemy.spd = round(enemy.spd/2)
-            if enemy.freeze_clock >= freeze_time:
-                enemy.is_frozen = False
 
-
-            # Explosion
+        # Explosion
         if enemy.health <= 0:
             if enemy.isexploding == False:
                 enemy.isexploding = True
                 drop(enemy)
                 exp_thread = Thread(target=subroutine.explosion, args=(enemy, subroutine.explosion_gif_list,))
                 exp_thread.start()
+
+        # Handle Freezing
+        if enemy.is_frozen == True:
+            enemy.draw()
+            enemy.freeze_clock += 1
+            if enemy.freeze_clock >= freeze_time:
+                enemy.is_frozen = False
+            continue
 
         # Enemy Movement and actions
         if enemy.health > 0 and enemy.lvl == 1:
@@ -661,23 +673,28 @@ def handle_enemies(ene_dict, player):
             subroutine.player_got_hit(player)
             enemy.kill()
 
-        if enemy.lvl == 4 and drops_list.count("poop") <= 2:
-            enemy.poop()
+        if enemy.lvl == 4:
+            poop_count = [i for i in drops_list if i.kind=='poop']
+            if len(poop_count) < 1:
+                enemy.poop()
 
         # Update visuals of enemy
         enemy.draw()
+
 def handle_drops(drops_list, player):
     for drop in drops_list:
-        if drop.y <= GROUND + 32:
+        if drop.y >= GROUND - 32:
+            drop.y = GROUND - 32
             drop.despawn()
-        if drop.y < GROUND - drop.get_height() - 5:
+            if drop.kind == "poop":
+                drop.img = poop_img
+        else:
             drop.y += dropspd
         drop.draw()
+
         if drop.collision(player):
             drop.pick_up(player)
-        if drop.kind == "poop":
-            if drop.y >= GROUND - drop.get_height() - 2:
-                drop.img = poop_img
+
 
 # MAIN
 def main():
